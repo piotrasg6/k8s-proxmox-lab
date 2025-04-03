@@ -1,0 +1,17 @@
+proxmox_api_url = "https://192.168.1.191:8006/api2/json"
+proxmox_api_token_id = "root@pam!APIToken"
+proxmox_api_token_secret = "de407d2c-d269-4a6c-87e0-31ebfce7c410"
+proxmox_node = "pve"
+template_name = "ubuntu-2204-template"
+ssh_key = "ssh-rsa AAAAB3NzaC1..."
+control_plane_count = 1
+worker_node_count = 3
+control_plane_vcpus = 2
+control_plane_memory = 4096
+worker_vcpus = 4
+worker_memory = 8192
+vm_network_bridge = "vmbr0"
+management_network = "192.168.100.0/24"
+management_gateway = "192.168.100.1"
+disk_size = "50G"
+kubernetes_version = "1.26.0"

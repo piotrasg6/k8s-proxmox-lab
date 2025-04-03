@@ -1,0 +1,138 @@
+---
+- name: Common Kubernetes prerequisites
+  hosts: all
+  become: true
+  tasks:
+    - name: Disable swap
+      shell: swapoff -a
+      
+    - name: Remove swap from fstab
+      replace:
+        path: /etc/fstab
+        regexp: '^([^#].*?\sswap\s+.*)$'
+        replace: '# \1'
+
+    - name: Add Kubernetes apt key
+      apt_key:
+        url: https://pkgs.k8s.io/core:/stable:/v${k8s_version}/deb/Release.key
+        state: present
+
+    - name: Add Kubernetes repository
+      apt_repository:
+        repo: "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main"
+        state: present
+        filename: kubernetes
+
+    - name: Add Docker apt key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+        filename: docker
+
+    - name: Install containerd
+      apt:
+        name: containerd.io
+        state: present
+        update_cache: true
+
+    - name: Configure containerd
+      shell: |
+        mkdir -p /etc/containerd
+        containerd config default | tee /etc/containerd/config.toml
+        sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml
+        systemctl restart containerd
+        systemctl enable containerd
+
+    - name: Install Kubernetes components
+      apt:
+        name:
+          - kubelet={{ k8s_version }}-00
+          - kubeadm={{ k8s_version }}-00
+          - kubectl={{ k8s_version }}-00
+        state: present
+
+    - name: Hold Kubernetes packages
+      dpkg_selections:
+        name: "{{ item }}"
+        selection: hold
+      with_items:
+        - kubelet
+        - kubeadm
+        - kubectl
+
+- name: Initialize Kubernetes control plane
+  hosts: control_plane[0]
+  become: true
+  tasks:
+    - name: Initialize Kubernetes cluster
+      shell: |
+        kubeadm init \
+          --pod-network-cidr=${pod_network_cidr} \
+          --service-cidr=${service_cidr} \
+          --control-plane-endpoint=${control_plane_endpoint} \
+          --upload-certs
+      register: kubeadm_init
+      
+    - name: Create .kube directory
+      file:
+        path: /home/{{ ansible_user }}/.kube
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0755'
+
+    - name: Copy kube config
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /home/{{ ansible_user }}/.kube/config
+        remote_src: yes
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0644'
+
+    - name: Install Calico network plugin
+      become: false
+      shell: |
+        kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
+      args:
+        chdir: /home/{{ ansible_user }}
+
+    - name: Get join command
+      shell: kubeadm token create --print-join-command
+      register: join_command
+
+    - name: Store join command
+      set_fact:
+        join_command: "{{ join_command.stdout_strip }}"
+
+- name: Join worker nodes
+  hosts: workers
+  become: true
+  tasks:
+    - name: Join cluster
+      shell: "{{ hostvars['k8s-control-1']['join_command'] }}"
+      register: join_result
+      changed_when: true
+
+- name: Configure kubectl on local machine
+  hosts: localhost
+  connection: local
+  tasks:
+    - name: Create local .kube directory
+      file:
+        path: ~/.kube
+        state: directory
+        mode: '0755'
+
+    - name: Fetch kubeconfig from control plane
+      fetch:
+        src: /etc/kubernetes/admin.conf
+        dest: ~/.kube/config
+        flat: yes
+      delegate_to: "{{ groups['control_plane'][0] }}"
+      become: true

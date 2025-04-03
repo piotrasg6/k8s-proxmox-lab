@@ -1,0 +1,19 @@
+---
+all:
+  vars:
+    ansible_user: ${ssh_user}
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+    k8s_version: ${k8s_version}
+  children:
+    control_plane:
+      hosts:
+%{ for index, ip in control_plane_ips ~}
+        k8s-control-${index + 1}:
+          ansible_host: ${ip}
+%{ endfor ~}
+    workers:
+      hosts:
+%{ for index, ip in worker_ips ~}
+        k8s-worker-${index + 1}:
+          ansible_host: ${ip}
+%{ endfor ~}
