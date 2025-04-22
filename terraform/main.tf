@@ -84,7 +84,11 @@ resource "proxmox_vm_qemu" "k8s_control_plane" {
         - sysctl --system
       EOFCI
 
-      scp /tmp/user-data-${count.index}.yml root@${local.proxmox_host}:/var/lib/pve/local/snippets/
+      # Create snippets directory if it doesn't exist
+      ssh -o StrictHostKeyChecking=no -i ${var.ssh_private_key_path} root@${local.proxmox_host} 'mkdir -p /var/lib/pve/local/snippets'
+
+      # Copy the file
+      scp -o StrictHostKeyChecking=no -i ${var.ssh_private_key_path} /tmp/user-data-${count.index}.yml root@${local.proxmox_host}:/var/lib/pve/local/snippets/
     EOT
   }
 }
@@ -97,13 +101,15 @@ resource "null_resource" "control_plane_cleanup" {
     vm_id = proxmox_vm_qemu.k8s_control_plane[count.index].id
     proxmox_host = local.proxmox_host
     snippet_index = count.index
+    ssh_key_path = var.ssh_private_key_path
   }
 
   provisioner "local-exec" {
     when    = destroy
-    command = "ssh root@${self.triggers.proxmox_host} 'rm -f /var/lib/pve/local/snippets/user-data-${self.triggers.snippet_index}.yml'"
+    command = "ssh -o StrictHostKeyChecking=no -i ${self.triggers.ssh_key_path} root@${self.triggers.proxmox_host} 'rm -f /var/lib/pve/local/snippets/user-data-${self.triggers.snippet_index}.yml'"
   }
 }
+
 
 # Worker nodes
 resource "proxmox_vm_qemu" "k8s_worker" {
@@ -175,11 +181,14 @@ resource "proxmox_vm_qemu" "k8s_worker" {
         - sysctl --system
       EOFCI
 
-      scp /tmp/worker-data-${count.index}.yml root@${local.proxmox_host}:/var/lib/pve/local/snippets/
+      # Create snippets directory if it doesn't exist
+      ssh -o StrictHostKeyChecking=no -i ${var.ssh_private_key_path} root@${local.proxmox_host} 'mkdir -p /var/lib/pve/local/snippets'
+
+      # Copy the file
+      scp -o StrictHostKeyChecking=no -i ${var.ssh_private_key_path} /tmp/worker-data-${count.index}.yml root@${local.proxmox_host}:/var/lib/pve/local/snippets/
     EOT
   }
 }
-
 # Worker cleanup resources
 resource "null_resource" "worker_cleanup" {
   count = var.worker_node_count
@@ -188,10 +197,11 @@ resource "null_resource" "worker_cleanup" {
     vm_id = proxmox_vm_qemu.k8s_worker[count.index].id
     proxmox_host = local.proxmox_host
     snippet_index = count.index
+    ssh_key_path = var.ssh_private_key_path
   }
 
   provisioner "local-exec" {
     when    = destroy
-    command = "ssh root@${self.triggers.proxmox_host} 'rm -f /var/lib/pve/local/snippets/worker-data-${self.triggers.snippet_index}.yml'"
+    command = "ssh -o StrictHostKeyChecking=no -i ${self.triggers.ssh_key_path} root@${self.triggers.proxmox_host} 'rm -f /var/lib/pve/local/snippets/worker-data-${self.triggers.snippet_index}.yml'"
   }
 }
